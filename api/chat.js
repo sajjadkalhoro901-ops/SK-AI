@@ -14,22 +14,28 @@ export default async function handler(req, res) {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const messages = Array.isArray(body?.messages) ? body.messages : [];
-    const cleanMessages = messages
+
+    // Send the conversation as plain text instead of replaying assistant/tool
+    // response items. This keeps the Responses API input valid across turns.
+    const transcript = messages
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-      .slice(-20);
+      .slice(-20)
+      .map((m) => `${m.role === 'assistant' ? 'SK AI' : 'User'}: ${m.content.trim()}`)
+      .join('\n\n');
+
+    const input = transcript || 'User: Hello';
 
     const response = await client.responses.create({
       model: 'gpt-5',
       tools: [{ type: 'web_search' }],
       instructions: [
         'You are SK AI, a helpful personal AI assistant.',
-        'Understand and respond naturally in Urdu, Hindi, English, and Roman Urdu.',
+        'Understand and respond naturally in English and Roman Urdu.',
         'Be accurate, practical, concise when appropriate, and explain difficult things clearly.',
         'Use web search when the user asks for current, changing, or externally verifiable information.',
-        'Never claim you performed an action unless the connected tool actually performed it.',
-        'For sensitive actions such as purchases, deletion, account changes, or sending messages, ask for confirmation before executing them when such tools are later connected.'
+        'Reply with only the answer to the user, without prefixes such as "SK AI:".'
       ].join(' '),
-      input: cleanMessages.length ? cleanMessages : 'Hello, SK AI is ready.',
+      input,
     });
 
     return res.status(200).json({ reply: response.output_text || 'I could not generate a response.' });
