@@ -34,7 +34,15 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ reply: response.output_text || 'I could not generate a response.' });
   } catch (error) {
-    console.error('SK AI request failed:', error?.message || error);
-    return res.status(500).json({ error: 'SK AI could not process that request right now.' });
+    console.error('SK AI request failed:', error);
+
+    const status = Number(error?.status) || 500;
+    const code = typeof error?.code === 'string' ? error.code : undefined;
+    const message = typeof error?.message === 'string' ? error.message : 'Unknown OpenAI API error.';
+
+    return res.status(500).json({
+      error: 'SK AI could not process that request right now.',
+      diagnostic: { status, code, message },
+    });
   }
 }
