@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SK AI — a personal voice-first AI assistant.">
+<title>SK AI — Personal Assistant</title>
+<style>
+:root{color-scheme:dark;--bg:#05070b;--panel:#0d1118;--line:#1d2733;--text:#f5f7fa;--muted:#8793a3;--accent:#58a6ff;--accent2:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at 50% 15%,#17243a 0,transparent 35%),var(--bg);color:var(--text)}
+.app{width:min(1050px,94vw);margin:auto;min-height:100vh;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center;padding:24px 0}.logo{display:flex;gap:12px;align-items:center;font-weight:800;letter-spacing:.4px}.orb{width:40px;height:40px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff, #58a6ff 20%,#6d28d9 55%,transparent 72%);box-shadow:0 0 35px #2563eb88}.status{color:#65d98b;font-size:13px}.main{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:35px 0 80px}.main h1{font-size:clamp(38px,7vw,72px);margin:0 0 12px;letter-spacing:-2px}.main p{color:var(--muted);max-width:650px;font-size:17px;line-height:1.7}.voice{margin:35px 0 25px;width:130px;height:130px;border:1px solid #3b82f655;border-radius:50%;background:radial-gradient(circle,#172d4e,#0c1625 62%,#080d15);color:white;font-size:38px;cursor:pointer;box-shadow:0 0 60px #2563eb33;transition:.25s}.voice:hover,.voice.listening{transform:scale(1.05);box-shadow:0 0 80px #58a6ff55}.hint{font-size:13px!important;color:#667384!important}.chat{width:min(850px,100%);margin-top:25px;display:flex;gap:10px}.chat input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px;color:white;outline:none}.chat button{border:0;border-radius:14px;padding:0 22px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:white;font-weight:800;cursor:pointer}.response{width:min(850px,100%);margin-top:14px;padding:18px;text-align:left;border:1px solid var(--line);border-radius:16px;background:#0a0f16;min-height:54px;color:#dbe5f0;line-height:1.65}.features{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;width:100%;margin-top:35px}.feature{padding:16px;border:1px solid var(--line);border-radius:14px;background:#090d13;color:#aeb8c5;font-size:13px}.feature strong{display:block;color:white;margin-bottom:6px}.footer{padding:20px 0;color:#586576;text-align:center;font-size:12px}@media(max-width:700px){.features{grid-template-columns:repeat(2,1fr)}.chat button{padding:0 16px}.voice{width:110px;height:110px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="top"><div class="logo"><span class="orb"></span><span>SK AI</span></div><span class="status">● Ready</span></header>
+<main class="main">
+<h1>How can I help?</h1>
+<p>Your personal AI assistant. Ask questions, speak naturally, write, translate, calculate, code, research and more.</p>
+<button class="voice" id="voice" aria-label="Start voice input">🎙️</button>
+<p class="hint" id="hint">Tap the microphone to speak</p>
+<div class="chat"><input id="input" type="text" placeholder="Ask SK AI anything..." autocomplete="off"><button id="send">Send</button></div>
+<div class="response" id="response">SK AI is ready. Connect the secure AI backend to enable full answers and web-powered capabilities.</div>
+<div class="features"><div class="feature"><strong>🎙️ Voice</strong>Voice-first interaction</div><div class="feature"><strong>🌐 Research</strong>Web-aware answers</div><div class="feature"><strong>🧠 Multilingual</strong>Urdu, Hindi, English & Roman Urdu</div><div class="feature"><strong>🔐 Safe</strong>Confirmation for sensitive actions</div></div>
+</main><footer class="footer">SK AI • Personal Assistant • Separate from SK Movies</footer>
+</div>
+<script>
+const input=document.getElementById('input'),send=document.getElementById('send'),response=document.getElementById('response'),voice=document.getElementById('voice'),hint=document.getElementById('hint');
+function submit(){const q=input.value.trim();if(!q)return;response.textContent='You asked: '+q+'\n\nSK AI backend is not connected yet. The interface is ready for the secure AI connection.';input.value=''}
+send.onclick=submit;input.addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){const r=new SR();r.lang='en-US';r.interimResults=false;r.onstart=()=>{voice.classList.add('listening');hint.textContent='Listening…'};r.onend=()=>{voice.classList.remove('listening');hint.textContent='Tap the microphone to speak'};r.onerror=()=>{voice.classList.remove('listening');hint.textContent='Voice input unavailable in this browser'};r.onresult=e=>{input.value=e.results[0][0].transcript;submit()};voice.onclick=()=>r.start()}else{voice.onclick=()=>hint.textContent='Speech recognition is not supported in this browser.'}
+</script>
+</body>
+</html>
