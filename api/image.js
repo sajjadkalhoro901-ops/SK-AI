@@ -28,11 +28,12 @@ function buildInstruction(prompt) {
   ].join('\n');
 }
 
-async function callPollinations(image, mimeType, prompt, imageSize, aspectRatio) {
-  if (!process.env.POLLINATIONS_API_KEY) {
-    const error = new Error('POLLINATIONS_API_KEY is not configured.');
-    error.status = 503;
-    error.code = 'POLLINATIONS_KEY_MISSING';
+async function callPollinations(image, mimeType, prompt, imageSize, aspectRatio, userKey) {
+  const apiKey = userKey || process.env.POLLINATIONS_API_KEY;
+  if (!apiKey) {
+    const error = new Error('Connect Pollinations to use the no-Google-billing image editor.');
+    error.status = 401;
+    error.code = 'POLLINATIONS_CONNECT_REQUIRED';
     throw error;
   }
 
@@ -46,7 +47,7 @@ async function callPollinations(image, mimeType, prompt, imageSize, aspectRatio)
 
   const response = await fetch('https://gen.pollinations.ai/v1/images/edits', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.POLLINATIONS_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: form
   });
 
@@ -55,7 +56,7 @@ async function callPollinations(image, mimeType, prompt, imageSize, aspectRatio)
     const text = await response.text().catch(() => '');
     const error = new Error(text || `Pollinations image edit failed with ${response.status}.`);
     error.status = response.status;
-    error.code = 'POLLINATIONS_ERROR';
+    error.code = response.status === 401 || response.status === 403 ? 'POLLINATIONS_AUTH_FAILED' : 'POLLINATIONS_ERROR';
     throw error;
   }
 
@@ -81,26 +82,17 @@ async function callGemini(model, image, mimeType, prompt, imageSize, aspectRatio
     }
   };
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': process.env.GEMINI_API_KEY
-      },
-      body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [
-            { text: buildInstruction(prompt) },
-            { inline_data: { mime_type: mimeType, data: cleanBase64(image) } }
-          ]
-        }],
-        generationConfig
-      })
-    }
-  );
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [
+        { text: buildInstruction(prompt) },
+        { inline_data: { mime_type: mimeType, data: cleanBase64(image) } }
+      ]}],
+      generationConfig
+    })
+  });
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -113,10 +105,7 @@ async function callGemini(model, image, mimeType, prompt, imageSize, aspectRatio
 
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const imagePart = parts.find((part) => part?.inlineData?.data || part?.inline_data?.data);
-  if (!imagePart) {
-    const text = parts.map((part) => part?.text).filter(Boolean).join(' ').trim();
-    throw Object.assign(new Error(text || 'Gemini did not return an edited image.'), { status: 502, code: 'NO_IMAGE_OUTPUT', model });
-  }
+  if (!imagePart) throw Object.assign(new Error('Gemini did not return an edited image.'), { status: 502, code: 'NO_IMAGE_OUTPUT', model });
 
   const blob = imagePart.inlineData || imagePart.inline_data;
   const outputMime = blob.mimeType || blob.mime_type || 'image/png';
@@ -128,23 +117,26 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    const { image, mimeType, prompt, imageSize = '2K', aspectRatio = 'auto' } = body;
+    const { image, mimeType, prompt, imageSize = '2K', aspectRatio = 'auto', pollinationsKey } = body;
     if (!image || !mimeType || !prompt) return res.status(400).json({ error: 'Image, mimeType and prompt are required.' });
     if (!/^image\/(png|jpeg|webp)$/.test(mimeType)) return res.status(400).json({ error: 'Please upload a PNG, JPEG or WebP image.' });
 
     const size = new Set(['1K', '2K', '4K']).has(imageSize) ? imageSize : '2K';
     const ratio = new Set(['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9']).has(aspectRatio) ? aspectRatio : 'auto';
 
-    // Preferred no-Google-billing path.
-    if (process.env.POLLINATIONS_API_KEY) {
+    // User-authorized Pollinations key can be supplied per request (BYOP).
+    // This keeps the user's key out of the SK AI repository and avoids Google Cloud billing.
+    if (pollinationsKey || process.env.POLLINATIONS_API_KEY) {
       try {
-        return res.status(200).json(await callPollinations(image, mimeType, prompt, size, ratio));
+        return res.status(200).json(await callPollinations(image, mimeType, prompt, size, ratio, pollinationsKey));
       } catch (error) {
         console.error('Pollinations image edit failed:', error);
-        // If Gemini is configured too, fall through to it. Otherwise expose a useful setup message.
         if (!process.env.GEMINI_API_KEY) {
-          return res.status(Number(error.status) || 502).json({
-            error: 'Free image editor is temporarily unavailable.',
+          const status = Number(error.status) || 502;
+          return res.status(status).json({
+            error: error.code === 'POLLINATIONS_CONNECT_REQUIRED'
+              ? 'Free image editing connection is required.'
+              : 'Image editing provider rejected the request.',
             diagnostic: { code: error.code, message: error.message, provider: 'pollinations' }
           });
         }
@@ -153,8 +145,8 @@ export default async function handler(req, res) {
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(503).json({
-        error: 'Image editing is not configured yet.',
-        diagnostic: { code: 'NO_IMAGE_PROVIDER', message: 'Add POLLINATIONS_API_KEY for the no-Google-billing image editor.' }
+        error: 'Image editing connection is required.',
+        diagnostic: { code: 'NO_IMAGE_PROVIDER', message: 'Connect Pollinations (no Google Cloud billing required) or configure a server-side image provider.' }
       });
     }
 
@@ -172,10 +164,7 @@ export default async function handler(req, res) {
     }
 
     const status = Number(lastError?.status) >= 400 && Number(lastError?.status) < 600 ? Number(lastError.status) : 500;
-    return res.status(status).json({
-      error: 'SK AI could not edit that image right now.',
-      diagnostic: { status, code: lastError?.code, model: lastError?.model, message: lastError?.message }
-    });
+    return res.status(status).json({ error: 'SK AI could not edit that image right now.', diagnostic: { status, code: lastError?.code, model: lastError?.model, message: lastError?.message } });
   } catch (error) {
     console.error('SK AI image edit request failed:', error);
     return res.status(500).json({ error: 'SK AI could not edit that image right now.', diagnostic: { status: 500, code: error?.code, message: error?.message } });
