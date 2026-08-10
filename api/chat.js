@@ -1,13 +1,11 @@
-import OpenAI from 'openai';
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return res.status(500).json({ error: 'SK AI backend is not configured yet.' });
   }
 
@@ -15,8 +13,6 @@ export default async function handler(req, res) {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     const messages = Array.isArray(body?.messages) ? body.messages : [];
 
-    // Send the conversation as plain text instead of replaying assistant/tool
-    // response items. This keeps the Responses API input valid across turns.
     const transcript = messages
       .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .slice(-20)
@@ -25,26 +21,55 @@ export default async function handler(req, res) {
 
     const input = transcript || 'User: Hello';
 
-    const response = await client.responses.create({
-      model: 'gpt-5',
-      tools: [{ type: 'web_search' }],
-      instructions: [
-        'You are SK AI, a helpful personal AI assistant.',
-        'Understand and respond naturally in English and Roman Urdu.',
-        'Be accurate, practical, concise when appropriate, and explain difficult things clearly.',
-        'Use web search when the user asks for current, changing, or externally verifiable information.',
-        'Reply with only the answer to the user, without prefixes such as "SK AI:".'
-      ].join(' '),
-      input,
+    const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{
+            text: [
+              'You are SK AI, a helpful personal AI assistant.',
+              'Understand and respond naturally in English and Roman Urdu.',
+              'Be accurate, practical, concise when appropriate, and explain difficult things clearly.',
+              'Use Google Search grounding when the user asks for current, changing, or externally verifiable information.',
+              'Reply with only the answer to the user, without prefixes such as "SK AI:".'
+            ].join(' ')
+          }]
+        },
+        contents: [{
+          role: 'user',
+          parts: [{ text: input }]
+        }],
+        tools: [{ google_search: {} }]
+      })
     });
 
-    return res.status(200).json({ reply: response.output_text || 'I could not generate a response.' });
+    const data = await response.json();
+
+    if (!response.ok) {
+      const message = data?.error?.message || 'Unknown Gemini API error.';
+      const code = data?.error?.status || data?.error?.code;
+      const error = new Error(message);
+      error.status = response.status;
+      error.code = code;
+      throw error;
+    }
+
+    const reply = data?.candidates?.[0]?.content?.parts
+      ?.map((part) => part?.text)
+      .filter(Boolean)
+      .join('')
+      .trim();
+
+    return res.status(200).json({
+      reply: reply || 'I could not generate a response.'
+    });
   } catch (error) {
     console.error('SK AI request failed:', error);
 
     const status = Number(error?.status) || 500;
     const code = typeof error?.code === 'string' ? error.code : undefined;
-    const message = typeof error?.message === 'string' ? error.message : 'Unknown OpenAI API error.';
+    const message = typeof error?.message === 'string' ? error.message : 'Unknown Gemini API error.';
 
     return res.status(500).json({
       error: 'SK AI could not process that request right now.',
