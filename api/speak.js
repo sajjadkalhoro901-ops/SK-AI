@@ -1,4 +1,8 @@
-const MODELS = ['gemini-2.5-flash-preview-tts', 'gemini-2.5-pro-preview-tts'];
+const MODELS = [
+  process.env.GEMINI_TTS_MODEL || 'gemini-3.1-flash-tts-preview',
+  'gemini-2.5-flash-preview-tts',
+  'gemini-2.5-pro-preview-tts'
+];
 
 function makePrompt(text) {
   return [
@@ -75,7 +79,7 @@ export default async function handler(req, res) {
     if (!text) return res.status(400).json({ error: 'Text is required.' });
 
     let lastError = null;
-    for (const model of MODELS) {
+    for (const model of [...new Set(MODELS.filter(Boolean))]) {
       try {
         return res.status(200).json(await generate(model, text));
       } catch (error) {
