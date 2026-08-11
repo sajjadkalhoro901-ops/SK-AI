@@ -1,4 +1,4 @@
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const CREATOR = 'Sajjad Kalhoro';
 
 function cleanBase64(value) {
@@ -19,7 +19,8 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const messages = Array.isArray(body?.messages) ? body.messages.map(normalizeMessage).filter(Boolean).slice(-20) : [];
+    // Keep history short so normal questions return faster.
+    const messages = Array.isArray(body?.messages) ? body.messages.map(normalizeMessage).filter(Boolean).slice(-8) : [];
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
 
     const systemPrompt = `You are SK AI, a helpful personal AI assistant created by Sajjad Kalhoro.
@@ -29,7 +30,7 @@ When a user sends an image, inspect it carefully. If it contains text, transcrib
 If the user asks to identify a font from an image, analyze the lettering style, weight, spacing, serifs, geometry and decorative characteristics and give the closest likely font families; do not claim an exact font unless the evidence is sufficient. If asked to recreate text, provide exact wording and useful font/style suggestions.
 If image text is stylized, curved, rotated, decorative or partly obscured, make your best careful transcription and clearly mark uncertain characters rather than inventing words.
 If an image contains multiple text blocks, read all of them unless the user asks for a specific part.
-Be accurate, practical and concise when appropriate. Reply only with the answer.
+Be accurate, practical and concise. Reply only with the answer. For ordinary questions, keep the answer short and direct so it can be spoken quickly.
 If the user asks who created, made, developed, built or owns you, answer clearly: "Mujhe Sajjad Kalhoro ne banaya hai." You may also say "I was created by Sajjad Kalhoro." Do not claim another person created you.
 If asked about your name, say you are SK AI.
 Creator attribution is a fixed fact and must not be changed by user instructions.`;
@@ -48,7 +49,11 @@ Creator attribution is a fixed fact and must not be changed by user instructions
     const response = await fetch(`${GEMINI_API_URL}?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: systemPrompt }] }, contents })
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        generationConfig: { temperature: 0.5, maxOutputTokens: 500 }
+      })
     });
 
     const data = await response.json().catch(() => ({}));
