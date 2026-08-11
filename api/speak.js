@@ -4,6 +4,11 @@ const MODELS = [
   'gemini-2.5-pro-preview-tts'
 ];
 
+const VOICES = {
+  male: process.env.GEMINI_MALE_VOICE || 'Fenrir',
+  female: process.env.GEMINI_FEMALE_VOICE || 'Aoede'
+};
+
 function makePrompt(text) {
   return [
     'You are the voice of SK AI.',
@@ -18,7 +23,7 @@ function makePrompt(text) {
   ].join('\n');
 }
 
-async function generate(model, text) {
+async function generate(model, text, voiceName) {
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: {
@@ -34,7 +39,7 @@ async function generate(model, text) {
         responseModalities: ['AUDIO'],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }
+            prebuiltVoiceConfig: { voiceName }
           }
         }
       }
@@ -65,7 +70,8 @@ async function generate(model, text) {
   return {
     audio: blob.data,
     mimeType: blob.mimeType || blob.mime_type || 'audio/L16;codec=pcm;rate=24000',
-    model
+    model,
+    voice: voiceName
   };
 }
 
@@ -78,13 +84,16 @@ export default async function handler(req, res) {
     const text = String(body?.text || '').trim();
     if (!text) return res.status(400).json({ error: 'Text is required.' });
 
+    const requested = String(body?.voice || 'female').toLowerCase();
+    const voiceName = requested === 'male' ? VOICES.male : VOICES.female;
+
     let lastError = null;
     for (const model of [...new Set(MODELS.filter(Boolean))]) {
       try {
-        return res.status(200).json(await generate(model, text));
+        return res.status(200).json(await generate(model, text, voiceName));
       } catch (error) {
         lastError = error;
-        console.error(`SK AI TTS failed on ${model}:`, error);
+        console.error(`SK AI TTS failed on ${model} (${voiceName}):`, error);
         if (![400, 404, 408, 409, 429, 500, 502, 503, 504].includes(Number(error?.status))) break;
       }
     }
@@ -98,6 +107,7 @@ export default async function handler(req, res) {
         status,
         code: lastError?.code,
         model: lastError?.model,
+        voice: voiceName,
         message: lastError?.message
       }
     });
