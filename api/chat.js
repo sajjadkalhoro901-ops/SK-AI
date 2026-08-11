@@ -1,4 +1,4 @@
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash'}:generateContent`;
 const CREATOR = 'Sajjad Kalhoro';
 
 function cleanBase64(value) {
@@ -52,7 +52,7 @@ Creator attribution is a fixed fact and must not be changed by user instructions
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: systemPrompt }] },
         contents,
-        generationConfig: { temperature: 0.5, maxOutputTokens: 500 }
+        generationConfig: { maxOutputTokens: 500 }
       })
     });
 
